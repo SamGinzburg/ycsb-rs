@@ -22,6 +22,23 @@ impl SQLite {
 
 impl DB for SQLite {
     fn init(&self) -> Result<()> {
+
+        let mut query = String::from("
+            CREATE TABLE IF NOT EXISTS usertable (y_id VARCHAR(64) PRIMARY KEY,
+                                                  field0 VARCHAR(255),
+                                                  field1 VARCHAR(255),
+                                                  field2 VARCHAR(255),
+                                                  field3 VARCHAR(255),
+                                                  field4 VARCHAR(255),
+                                                  field5 VARCHAR(255),
+                                                  field6 VARCHAR(255),
+                                                  field7 VARCHAR(255),
+                                                  field8 VARCHAR(255),
+                                                  field9 VARCHAR(255));
+        ");
+        println!("{}", query);
+        self.conn.execute(query).unwrap();
+
         Ok(())
     }
 
@@ -38,6 +55,28 @@ impl DB for SQLite {
         }
         sql.values(&vals);
         let sql = sql.sql()?;
+        //println!("{}", sql);
+        let mut stmt = self.conn.prepare(sql)?;
+        let marker = format!(":{}", PRIMARY_KEY);
+        stmt.bind_by_name(&marker, key)?;
+        for (key, value) in values {
+            let marker = format!(":{}", key);
+            stmt.bind_by_name(&marker, &value[..])?;
+        }
+        let state = stmt.next()?;
+        assert!(state == State::Done);
+        Ok(())
+    }
+
+    fn update(&self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
+        //dbg!("{}, {:?}", key, values);
+        let mut sql = format!("
+            UPDATE usertable 
+            SET field0 = :field0, field1 = :field1, field2 = :field2, field3 = :field3, field4 = :field4, field5 = :field5, field6 = :field6, field7 = :field7, field8 = :field8, field9 = :field9
+            WHERE y_id = :y_id;
+        ");
+        //println!("{}", sql);
+
         let mut stmt = self.conn.prepare(sql)?;
         let marker = format!(":{}", PRIMARY_KEY);
         stmt.bind_by_name(&marker, key)?;

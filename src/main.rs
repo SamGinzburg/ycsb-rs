@@ -14,6 +14,7 @@ pub mod db;
 pub mod generator;
 pub mod properties;
 pub mod sqlite;
+pub mod rocksdb;
 pub mod workload;
 
 #[derive(StructOpt, Debug)]

@@ -123,15 +123,43 @@ impl Workload for CoreWorkload {
         db.insert(&self.table, &dbkey, &values).unwrap();
     }
 
+    fn do_update(&self, db: Rc<dyn DB>) {
+        let dbkey = self
+            .key_sequence
+            .lock()
+            .unwrap()
+            .next_value(&mut self.rng.lock().unwrap());
+        let dbkey = format!("{}", fnvhash64(dbkey));
+        let mut values = HashMap::new();
+        for field_name in &self.field_names {
+            let field_len = self
+                .field_length_generator
+                .lock()
+                .unwrap()
+                .next_value(&mut self.rng.lock().unwrap());
+            let s = Alphanumeric
+                .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
+            values.insert(&field_name[..], s);
+        }
+        db.update(&self.table, &dbkey, &values).unwrap();
+    }
+
     fn do_transaction(&self, db: Rc<dyn DB>) {
         let op = self
             .operation_chooser
             .lock()
             .unwrap()
             .next_value(&mut self.rng.lock().unwrap());
+        //dbg!(&op);
         match op {
             CoreOperation::Read => {
                 self.do_transaction_read(db);
+            }
+            CoreOperation::Update => {
+                self.do_update(db);
+            }
+            CoreOperation::Insert => {
+                self.do_insert(db);
             }
             _ => todo!(),
         }
