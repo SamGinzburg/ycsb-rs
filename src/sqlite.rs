@@ -21,7 +21,7 @@ impl SQLite {
 }
 
 impl DB for SQLite {
-    fn init(&self) -> Result<()> {
+    fn init(&mut self) -> Result<()> {
 
         let mut query = String::from("
             CREATE TABLE IF NOT EXISTS usertable (y_id VARCHAR(64) PRIMARY KEY,
@@ -42,7 +42,7 @@ impl DB for SQLite {
         Ok(())
     }
 
-    fn insert(&self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
+    fn insert(&mut self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
         // TODO: cache prepared statement
         let mut sql = SqlBuilder::insert_into(table);
         let mut vals: Vec<String> = Vec::new();
@@ -68,7 +68,7 @@ impl DB for SQLite {
         Ok(())
     }
 
-    fn update(&self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
+    fn update(&mut self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
         //dbg!("{}, {:?}", key, values);
         let mut sql = format!("
             UPDATE usertable 
@@ -89,7 +89,7 @@ impl DB for SQLite {
         Ok(())
     }
 
-    fn read(&self, table: &str, key: &str, result: &mut HashMap<String, String>) -> Result<()> {
+    fn read(&mut self, table: &str, key: &str, result: &mut HashMap<String, String>) -> Result<()> {
         // TODO: cache prepared statement
         let mut sql = SqlBuilder::select_from(table);
         sql.field("*");

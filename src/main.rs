@@ -9,12 +9,14 @@ use std::thread;
 use std::time::Instant;
 use structopt::StructOpt;
 use workload::CoreWorkload;
+use std::cell::RefCell;
 
 pub mod db;
 pub mod generator;
 pub mod properties;
 pub mod sqlite;
-pub mod rocksdb;
+pub mod postgres;
+//pub mod rocksdb;
 pub mod workload;
 
 #[derive(StructOpt, Debug)]
@@ -30,13 +32,13 @@ struct Opt {
     threads: usize,
 }
 
-fn load(wl: Arc<CoreWorkload>, db: Rc<dyn DB>, operation_count: usize) {
+fn load(wl: Arc<CoreWorkload>, db: Rc<RefCell<dyn DB>>, operation_count: usize) {
     for _ in 0..operation_count {
         wl.do_insert(db.clone());
     }
 }
 
-fn run(wl: Arc<CoreWorkload>, db: Rc<dyn DB>, operation_count: usize) {
+fn run(wl: Arc<CoreWorkload>, db: Rc<RefCell<dyn DB>>, operation_count: usize) {
     for _ in 0..operation_count {
         wl.do_transaction(db.clone());
     }
@@ -69,7 +71,7 @@ fn main() -> Result<()> {
             threads.push(thread::spawn(move || {
                 let db = db::create_db(&database).unwrap();
 
-                db.init().unwrap();
+                db.borrow_mut().init().unwrap();
 
                 match &cmd[..] {
                     "load" => load(wl.clone(), db, thread_operation_count as usize),

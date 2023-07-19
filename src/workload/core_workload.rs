@@ -6,6 +6,7 @@ use rand::SeedableRng;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
+use std::cell::RefCell;
 
 use crate::generator::{
     AcknowledgedCounterGenerator, ConstantGenerator, CounterGenerator, DiscreteGenerator,
@@ -83,11 +84,11 @@ impl CoreWorkload {
         }
     }
 
-    fn do_transaction_read(&self, db: Rc<dyn DB>) {
+    fn do_transaction_read(&self, db: Rc<RefCell<dyn DB>>) {
         let keynum = self.next_key_num();
         let dbkey = format!("{}", fnvhash64(keynum));
         let mut result = HashMap::new();
-        db.read(&self.table, &dbkey, &mut result).unwrap();
+        db.borrow_mut().read(&self.table, &dbkey, &mut result).unwrap();
         // TODO: verify rows
     }
 
@@ -102,7 +103,7 @@ impl CoreWorkload {
 }
 
 impl Workload for CoreWorkload {
-    fn do_insert(&self, db: Rc<dyn DB>) {
+    fn do_insert(&self, db: Rc<RefCell<dyn DB>>) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -120,10 +121,10 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        db.insert(&self.table, &dbkey, &values).unwrap();
+        db.borrow_mut().insert(&self.table, &dbkey, &values).unwrap();
     }
 
-    fn do_update(&self, db: Rc<dyn DB>) {
+    fn do_update(&self, db: Rc<RefCell<dyn DB>>) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -141,10 +142,10 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        db.update(&self.table, &dbkey, &values).unwrap();
+        db.borrow_mut().update(&self.table, &dbkey, &values).unwrap();
     }
 
-    fn do_transaction(&self, db: Rc<dyn DB>) {
+    fn do_transaction(&self, db: Rc<RefCell<dyn DB>>) {
         let op = self
             .operation_chooser
             .lock()
@@ -205,6 +206,8 @@ fn get_key_chooser_generator(prop: &Properties) -> Box<dyn Generator<u64> + Send
             prop.insert_start,
             prop.insert_start + insert_count - 1,
         )),
+        "zipfian" => Box::new(ZipfianGenerator::from_range(prop.insert_start,
+                              prop.insert_start + insert_count - 1)),
         _ => todo!(),
     }
 }
