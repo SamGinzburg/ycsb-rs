@@ -40,7 +40,9 @@ fn load(wl: Arc<CoreWorkload>, db: Rc<RefCell<dyn DB>>, operation_count: usize) 
 
 fn run(wl: Arc<CoreWorkload>, db: Rc<RefCell<dyn DB>>, operation_count: usize) {
     for _ in 0..operation_count {
+        let now = Instant::now();
         wl.do_transaction(db.clone());
+        //println!("{}", now.elapsed().as_millis());
     }
 }
 

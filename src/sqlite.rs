@@ -55,7 +55,7 @@ impl DB for SQLite {
         }
         sql.values(&vals);
         let sql = sql.sql()?;
-        //println!("{}", sql);
+        println!("{}", sql);
         let mut stmt = self.conn.prepare(sql)?;
         let marker = format!(":{}", PRIMARY_KEY);
         stmt.bind_by_name(&marker, key)?;
