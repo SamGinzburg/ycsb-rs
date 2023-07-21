@@ -112,12 +112,7 @@ CREATE TABLE IF NOT EXISTS usertable
 
         //self.runtime.block_on(async {
         let client = self.conn.get().await.unwrap();
-        let fut = client.query(&sql, params.as_slice());
-        if let Err(_) = timeout(Duration::from_millis(100), fut).await {
-                println!("did not receive value within 100 ms");
-        }
-
-        let client = self.conn.get().await.unwrap();
+        //let fut = client.query(&sql, params.as_slice());
         client.query(&sql, params.as_slice()).await.unwrap();
         //});
 

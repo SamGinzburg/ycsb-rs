@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use async_trait::async_trait;
 use std::borrow::BorrowMut;
 use crate::db::DBType;
+use tokio::time::{timeout, Duration};
 
 use crate::generator::{
     AcknowledgedCounterGenerator, ConstantGenerator, CounterGenerator, DiscreteGenerator,
@@ -53,10 +54,12 @@ pub struct CoreWorkload {
     zero_padding: usize,
     insertion_retry_limit: u64,
     insertion_retry_interval: u64,
+    timeout: u64,
+    retries: u64,
 }
 
 impl CoreWorkload {
-    pub fn new(prop: &Properties) -> Self {
+    pub fn new(prop: &Properties, opt: &crate::Opt) -> Self {
         let rng = SmallRng::from_entropy();
         let field_name_prefix = "field";
         let field_count = 10;
@@ -84,6 +87,8 @@ impl CoreWorkload {
             zero_padding: 1,
             insertion_retry_limit: 0,
             insertion_retry_interval: 0,
+            timeout: opt.timeout, // ms
+            retries: opt.retries,
         }
     }
 
@@ -91,7 +96,22 @@ impl CoreWorkload {
         let keynum = self.next_key_num();
         let dbkey = format!("{}", fnvhash64(keynum));
         let mut result = HashMap::new();
-        db.read(&self.table, &dbkey, &mut result).await.unwrap();
+        let mut retry = 4;
+        while retry > 0 {
+            let fut = db.read(&self.table, &dbkey, &mut result);
+            match timeout(Duration::from_millis(self.timeout), fut).await {
+                Err(_) => {
+                    println!("read timeout 100ms");
+                    retry -= 1;
+                },
+                Ok(result) => {
+                    result.unwrap();
+                    // read succeeded
+                    break;
+                },
+            }
+        }
+
         // TODO: verify rows
     }
 
@@ -126,7 +146,23 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        db.insert(&self.table, &dbkey, &values).await.unwrap();
+        //db.insert(&self.table, &dbkey, &values).await.unwrap();
+
+        let mut retry = self.retries;
+        while retry > 0 {
+            let fut = db.insert(&self.table, &dbkey, &values);
+            match timeout(Duration::from_millis(self.timeout), fut).await {
+                Err(_) => {
+                    println!("insert timeout 100ms");
+                    retry -= 1;
+                },
+                Ok(result) => {
+                    result.unwrap();
+                    // read succeeded
+                    break;
+                },
+            }
+        }
     }
 
     async fn do_update(&self, mut db: DBType) {
@@ -147,7 +183,23 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        db.update(&self.table, &dbkey, &values).await.unwrap();
+        //db.update(&self.table, &dbkey, &values).await.unwrap();
+
+        let mut retry = self.retries;
+        while retry > 0 {
+            let fut = db.update(&self.table, &dbkey, &values);
+            match timeout(Duration::from_millis(self.timeout), fut).await {
+                Err(_) => {
+                    println!("update timeout 100ms");
+                    retry -= 1;
+                },
+                Ok(result) => {
+                    result.unwrap();
+                    // read succeeded
+                    break;
+                },
+            }
+        }
     }
 
     async fn do_transaction(&self, db: DBType) {

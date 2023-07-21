@@ -23,7 +23,7 @@ pub mod workload;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "ycsb")]
-struct Opt {
+pub struct Opt {
     #[structopt(name = "COMMANDS")]
     commands: Vec<String>,
     #[structopt(short, long)]
@@ -32,6 +32,10 @@ struct Opt {
     workload: String,
     #[structopt(short, long, default_value = "1")]
     threads: usize,
+    #[structopt(short, long, default_value = "300")]
+    timeout: u64,
+    #[structopt(short, long, default_value = "100")]
+    retries: u64,
 }
 
 async fn load(wl: Arc<CoreWorkload>, db: db::DBType, operation_count: usize) {
@@ -45,36 +49,19 @@ async fn load(wl: Arc<CoreWorkload>, db: db::DBType, operation_count: usize) {
 async fn run(wl: Arc<CoreWorkload>, db: db::DBType, operation_count: usize) {
 
     let mut joins = vec![];
-    for _ in 0..100 {
+
+    for _ in 0..operation_count/100 {
         let db = db.clone();
         let wl = wl.clone();
-        let now = Instant::now();
         let join = tokio::task::spawn(async move {
-            for _ in 0..operation_count/100 {
+            for _ in 0..100 {
                 let now = Instant::now();
                 wl.do_transaction(db.clone()).await;
-                //println!("{}", now.elapsed().as_millis());
+                println!("{}", now.elapsed().as_millis());
             }
         });
         joins.push(join);
     }
-    /*
-    for _ in 0..operation_count {
-        let db = db.clone();
-        let wl = wl.clone();
-        let now = Instant::now();
-        /*
-        let join = tokio::task::spawn(async move {
-            let now = Instant::now();
-            wl.do_transaction(db.clone()).await;
-            println!("{}", now.elapsed().as_millis());
-        });
-        joins.push(join);
-        */
-        wl.do_transaction(db.clone()).await;
-        println!("{}", now.elapsed().as_millis());
-    }
-*/
 
     for join in joins {
         join.await.unwrap();
@@ -91,7 +78,7 @@ async fn main() -> Result<()> {
 
     let props = Arc::new(props);
 
-    let wl = Arc::new(CoreWorkload::new(&props));
+    let wl = Arc::new(CoreWorkload::new(&props, &opt));
 
     if opt.commands.is_empty() {
         bail!("no command specified");
@@ -114,16 +101,17 @@ async fn main() -> Result<()> {
         */
 
         let mut threads = vec![];
-        let db = db::create_db(&database).await.unwrap();
+        let mut db = db::create_db(&database).await.unwrap();
+        db.init().await.unwrap();
         for _ in 0..opt.threads {
             //let database = database.clone();
             let wl = wl.clone();
             let cmd = opt.commands[0].clone();
-            let mut db = db.clone();
+            let db = db.clone();
             //let db = db::create_db(&database).await.unwrap();
             threads.push(tokio::spawn(async move {
                 //let mut db = db::create_db(&database).await.unwrap();
-                db.init().await.unwrap();
+                //db.init().await.unwrap();
 
                 match &cmd[..] {
                     "load" => load(wl.clone(), db, thread_operation_count as usize).await,
