@@ -11,7 +11,8 @@ use tokio::*;
 use tokio::time::timeout;
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
-
+use std::sync::Arc;
+use std::cell::UnsafeCell;
 
 const PRIMARY_KEY: &str = "y_id";
 
@@ -19,6 +20,9 @@ pub struct Postgres {
     conn: Pool,
     //runtime: tokio::runtime::Runtime,
 }
+
+unsafe impl Send for Postgres {}
+unsafe impl Sync for Postgres {}
 
 impl Postgres {
     pub async fn new() -> Result<Self> {
@@ -53,7 +57,7 @@ impl Postgres {
                 recycling_method: RecyclingMethod::Fast
         };
         let mgr = Manager::from_config(pg_config, NoTls, mgr_config);
-        let pool = Pool::builder(mgr).max_size(256).build().unwrap();
+        let pool = Pool::builder(mgr).max_size(4).build().unwrap();
 
         Ok(Postgres { conn: pool } )
     }

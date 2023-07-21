@@ -34,7 +34,7 @@ struct Opt {
     threads: usize,
 }
 
-async fn load(wl: Arc<CoreWorkload>, db: Arc<Mutex<dyn DB>>, operation_count: usize) {
+async fn load(wl: Arc<CoreWorkload>, db: db::DBType, operation_count: usize) {
     for _ in 0..operation_count {
         let db = db.clone();
         let wl = wl.clone();
@@ -42,13 +42,22 @@ async fn load(wl: Arc<CoreWorkload>, db: Arc<Mutex<dyn DB>>, operation_count: us
     }
 }
 
-async fn run(wl: Arc<CoreWorkload>, db: Arc<Mutex<dyn DB>>, operation_count: usize) {
+async fn run(wl: Arc<CoreWorkload>, db: db::DBType, operation_count: usize) {
+    let mut joins = vec![];
     for _ in 0..operation_count {
         let db = db.clone();
         let wl = wl.clone();
         //let now = Instant::now();
-        wl.do_transaction(db.clone()).await;
+        let join = tokio::task::spawn(async move {
+            wl.do_transaction(db.clone()).await;
+        });
+        joins.push(join);
+        //wl.do_transaction(db.clone()).await;
         //println!("{}", now.elapsed().as_millis());
+    }
+
+    for join in joins {
+        join.await.unwrap();
     }
 }
 
@@ -85,15 +94,15 @@ async fn main() -> Result<()> {
         */
 
         let mut threads = vec![];
-        let db = db::create_db(&database).await.unwrap();
+        //let db = db::create_db(&database).await.unwrap();
         for _ in 0..opt.threads {
             let database = database.clone();
             let wl = wl.clone();
             let cmd = opt.commands[0].clone();
-            let db = db.clone();
+            //let db = db.clone();
             //let db = db::create_db(&database).await.unwrap();
             threads.push(tokio::spawn(async move {
-                //let db = db::create_db(&database).await.unwrap();
+                let db = db::create_db(&database).await.unwrap();
                 db.lock().await.init().await.unwrap();
 
                 match &cmd[..] {

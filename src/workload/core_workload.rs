@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 //use std::cell::RefCell;
 use async_trait::async_trait;
 use std::borrow::BorrowMut;
+use crate::db::DBType;
 
 use crate::generator::{
     AcknowledgedCounterGenerator, ConstantGenerator, CounterGenerator, DiscreteGenerator,
@@ -86,7 +87,7 @@ impl CoreWorkload {
         }
     }
 
-    async fn do_transaction_read(&self, db: Arc<Mutex<dyn DB>>) {
+    async fn do_transaction_read(&self, db: DBType) {
         let keynum = self.next_key_num();
         let dbkey = format!("{}", fnvhash64(keynum));
         let mut result = HashMap::new();
@@ -107,7 +108,7 @@ impl CoreWorkload {
 
 #[async_trait]
 impl Workload for CoreWorkload {
-    async fn do_insert(&self, db: Arc<Mutex<dyn DB>>) {
+    async fn do_insert(&self, db: DBType) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -129,7 +130,7 @@ impl Workload for CoreWorkload {
         db.insert(&self.table, &dbkey, &values).await.unwrap();
     }
 
-    async fn do_update(&self, db: Arc<Mutex<dyn DB>>) {
+    async fn do_update(&self, db: DBType) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -150,7 +151,7 @@ impl Workload for CoreWorkload {
         db.lock().await.update(&self.table, &dbkey, &values).await.unwrap();
     }
 
-    async fn do_transaction(&self, db: Arc<Mutex<dyn DB>>) {
+    async fn do_transaction(&self, db: DBType) {
         let op = self
             .operation_chooser
             .lock()
