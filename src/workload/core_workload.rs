@@ -4,9 +4,11 @@ use rand::distributions::{Alphanumeric, DistString};
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use std::collections::HashMap;
-use std::rc::Rc;
-use std::sync::Mutex;
-use std::cell::RefCell;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+//use std::cell::RefCell;
+use async_trait::async_trait;
+use std::borrow::BorrowMut;
 
 use crate::generator::{
     AcknowledgedCounterGenerator, ConstantGenerator, CounterGenerator, DiscreteGenerator,
@@ -31,19 +33,19 @@ impl std::fmt::Display for CoreOperation {
 
 #[allow(dead_code)]
 pub struct CoreWorkload {
-    rng: Mutex<SmallRng>,
+    rng: std::sync::Mutex<SmallRng>,
     table: String,
     field_count: u64,
     field_names: Vec<String>,
-    field_length_generator: Mutex<Box<dyn Generator<u64> + Send>>,
+    field_length_generator: std::sync::Mutex<Box<dyn Generator<u64> + Send>>,
     read_all_fields: bool,
     write_all_fields: bool,
     data_integrity: bool,
-    key_sequence: Mutex<Box<dyn Generator<u64> + Send>>,
-    operation_chooser: Mutex<DiscreteGenerator<CoreOperation>>,
-    key_chooser: Mutex<Box<dyn Generator<u64> + Send>>,
+    key_sequence: std::sync::Mutex<Box<dyn Generator<u64> + Send>>,
+    operation_chooser: std::sync::Mutex<DiscreteGenerator<CoreOperation>>,
+    key_chooser: std::sync::Mutex<Box<dyn Generator<u64> + Send>>,
     //field_chooser: Box<dyn Generator<String>>,
-    transaction_insert_key_sequence: Mutex<AcknowledgedCounterGenerator>,
+    transaction_insert_key_sequence: std::sync::Mutex<AcknowledgedCounterGenerator>,
     //scan_length: Box<dyn Generator<u64>>,
     ordered_inserts: bool,
     record_count: usize,
@@ -62,19 +64,19 @@ impl CoreWorkload {
             field_names.push(format!("{}{}", field_name_prefix, i));
         }
         CoreWorkload {
-            rng: Mutex::new(rng),
+            rng: std::sync::Mutex::new(rng),
             table: String::from("usertable"),
             field_count,
             field_names,
-            field_length_generator: Mutex::new(get_field_length_generator(prop)),
+            field_length_generator: std::sync::Mutex::new(get_field_length_generator(prop)),
             read_all_fields: true,
             write_all_fields: true,
             data_integrity: true,
-            key_sequence: Mutex::new(Box::new(CounterGenerator::new(prop.insert_start))),
-            operation_chooser: Mutex::new(create_operation_generator(prop)),
-            key_chooser: Mutex::new(get_key_chooser_generator(prop)),
+            key_sequence: std::sync::Mutex::new(Box::new(CounterGenerator::new(prop.insert_start))),
+            operation_chooser: std::sync::Mutex::new(create_operation_generator(prop)),
+            key_chooser: std::sync::Mutex::new(get_key_chooser_generator(prop)),
             //field_chooser: Box<dyn Generator<String>>,
-            transaction_insert_key_sequence: Mutex::new(AcknowledgedCounterGenerator::new(1)),
+            transaction_insert_key_sequence: std::sync::Mutex::new(AcknowledgedCounterGenerator::new(1)),
             //scan_length: Box<dyn Generator<u64>>,
             ordered_inserts: true,
             record_count: 1,
@@ -84,11 +86,11 @@ impl CoreWorkload {
         }
     }
 
-    fn do_transaction_read(&self, db: Rc<RefCell<dyn DB>>) {
+    async fn do_transaction_read(&self, db: Arc<Mutex<dyn DB>>) {
         let keynum = self.next_key_num();
         let dbkey = format!("{}", fnvhash64(keynum));
         let mut result = HashMap::new();
-        db.borrow_mut().read(&self.table, &dbkey, &mut result).unwrap();
+        db.lock().await.read(&self.table, &dbkey, &mut result).await.unwrap();
         // TODO: verify rows
     }
 
@@ -102,8 +104,10 @@ impl CoreWorkload {
     }
 }
 
+
+#[async_trait]
 impl Workload for CoreWorkload {
-    fn do_insert(&self, db: Rc<RefCell<dyn DB>>) {
+    async fn do_insert(&self, db: Arc<Mutex<dyn DB>>) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -121,10 +125,11 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        db.borrow_mut().insert(&self.table, &dbkey, &values).unwrap();
+        let mut db = db.lock().await;
+        db.insert(&self.table, &dbkey, &values).await.unwrap();
     }
 
-    fn do_update(&self, db: Rc<RefCell<dyn DB>>) {
+    async fn do_update(&self, db: Arc<Mutex<dyn DB>>) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -142,10 +147,10 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        db.borrow_mut().update(&self.table, &dbkey, &values).unwrap();
+        db.lock().await.update(&self.table, &dbkey, &values).await.unwrap();
     }
 
-    fn do_transaction(&self, db: Rc<RefCell<dyn DB>>) {
+    async fn do_transaction(&self, db: Arc<Mutex<dyn DB>>) {
         let op = self
             .operation_chooser
             .lock()
@@ -154,13 +159,13 @@ impl Workload for CoreWorkload {
         //dbg!(&op);
         match op {
             CoreOperation::Read => {
-                self.do_transaction_read(db);
+                self.do_transaction_read(db).await;
             }
             CoreOperation::Update => {
-                self.do_update(db);
+                self.do_update(db).await;
             }
             CoreOperation::Insert => {
-                self.do_insert(db);
+                self.do_insert(db).await;
             }
             _ => todo!(),
         }

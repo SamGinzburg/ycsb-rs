@@ -5,9 +5,13 @@ pub use core_workload::CoreWorkload;
 use crate::db::DB;
 use std::rc::Rc;
 use std::cell::RefCell;
+use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-pub trait Workload {
-    fn do_insert(&self, db: Rc<RefCell<dyn DB>>);
-    fn do_update(&self, db: Rc<RefCell<dyn DB>>);
-    fn do_transaction(&self, db: Rc<RefCell<dyn DB>>);
+#[async_trait]
+pub trait Workload: Sync + Send {
+    async fn do_insert(&self, db: Arc<Mutex<dyn DB>>);
+    async fn do_update(&self, db: Arc<Mutex<dyn DB>>);
+    async fn do_transaction(&self, db: Arc<Mutex<dyn DB>>);
 }

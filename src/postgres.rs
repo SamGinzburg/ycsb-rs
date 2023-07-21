@@ -8,45 +8,48 @@ use tokio_postgres::types::ToSql;
 use std::time::Duration;
 use tokio::task;
 use tokio::*;
+use tokio::time::timeout;
+use async_trait::async_trait;
+
 
 const PRIMARY_KEY: &str = "y_id";
 
 pub struct Postgres {
     conn: Client,
-    runtime: tokio::runtime::Runtime,
+    //runtime: tokio::runtime::Runtime,
 }
 
 impl Postgres {
-    pub fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self> {
+        /*
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
+        */
 
-        let client = runtime.block_on(async {
-            let mut config = Config::new();
-            let (client, connection) = config
-                           .tcp_user_timeout(Duration::from_millis(500))
-                           .connect_timeout(Duration::from_millis(500))
-                           .user("dboperator")
-                           .dbname("postgres")
-                           .password("password")
-                           .host("localhost")
-                           .port(5243)
-                           .connect(NoTls).await.unwrap();
-            dbg!(client.is_closed());
-            tokio::spawn( async move { connection.await.unwrap() } );
-            dbg!(client.is_closed());
+        let mut config = Config::new();
+        let (client, connection) = config
+                        .tcp_user_timeout(Duration::from_millis(500))
+                        .connect_timeout(Duration::from_millis(500))
+                        .user("dboperator")
+                        .dbname("postgres")
+                        .password("password")
+                        .host("localhost")
+                        .port(5243)
+                        .connect(NoTls).await.unwrap();
+        dbg!(client.is_closed());
+        tokio::spawn(connection);
+        //connection.await.unwrap();
+        dbg!(client.is_closed());
 
-            client
-        });
-
-        Ok(Postgres { conn: client, runtime: runtime })
+        Ok(Postgres { conn: client } )
     }
 }
 
+#[async_trait]
 impl DB for Postgres {
-    fn init(&mut self) -> Result<()> {
+    async fn init(&mut self) -> Result<()> {
 
         let mut query = String::from(r#"
 CREATE TABLE IF NOT EXISTS usertable
@@ -65,14 +68,13 @@ CREATE TABLE IF NOT EXISTS usertable
 );
 "#);
 
-        self.runtime.block_on(async {
-            //self.conn.execute("DROP TABLE IF EXISTS usertable;", &[]).await.unwrap();
-            self.conn.execute(&query, &[]).await.unwrap();
-        });
+        //dbg!(self.conn.is_closed());
+        //self.conn.execute("DROP TABLE IF EXISTS usertable;", &[]).await.unwrap();
+        self.conn.execute(&query, &[]).await.unwrap();
         Ok(())
     }
 
-    fn insert(&mut self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
+    async fn insert(&mut self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
         // TODO: cache prepared statement
         let mut sql = format!("
             INSERT INTO usertable (y_id, field0, field1, field2, field3, field4, field5, field6, field7, field8, field9)
@@ -82,7 +84,6 @@ CREATE TABLE IF NOT EXISTS usertable
         ");
         //println!("{}", sql);
         let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
-        let key = String::from(key);
         params.push(&key);
 
         for (_, value) in values {
@@ -91,14 +92,18 @@ CREATE TABLE IF NOT EXISTS usertable
         //let key = String::from(key);
         //params.push(&key);
 
-        self.runtime.block_on(async {
+        //self.runtime.block_on(async {
+            let fut = self.conn.query(&sql, params.as_slice());
+            if let Err(_) = timeout(Duration::from_millis(100), fut).await {
+                println!("did not receive value within 100 ms");
+            }
             self.conn.query(&sql, params.as_slice()).await.unwrap();
-        });
+        //});
 
         Ok(())
     }
 
-    fn update(&mut self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
+    async fn update(&mut self, table: &str, key: &str, values: &HashMap<&str, String>) -> Result<()> {
         //dbg!("{}, {:?}", key, values);
         let mut sql = format!("
             UPDATE usertable
@@ -113,14 +118,12 @@ CREATE TABLE IF NOT EXISTS usertable
         let key = String::from(key);
         params.push(&key);
 
-        self.runtime.block_on(async {
-            self.conn.query(&sql, params.as_slice()).await.unwrap();
-        });
+        self.conn.query(&sql, params.as_slice()).await.unwrap();
 
         Ok(())
     }
 
-    fn read(&mut self, table: &str, key: &str, result: &mut HashMap<String, String>) -> Result<()> {
+    async fn read(&mut self, table: &str, key: &str, result: &mut HashMap<String, String>) -> Result<()> {
         // TODO: cache prepared statement
         let mut sql = SqlBuilder::select_from(table);
         sql.field("*");
@@ -128,11 +131,8 @@ CREATE TABLE IF NOT EXISTS usertable
         sql.and_where(format!("{} = $1", PRIMARY_KEY));
         let sql = sql.sql()?;
 
-        let (query, rows) = self.runtime.block_on(async {
-            let query = self.conn.prepare(&sql).await.unwrap();
-            let rows = self.conn.query(&query, &[&key]).await.unwrap();
-            (query, rows)
-        });
+        let query = self.conn.prepare(&sql).await.unwrap();
+        let rows = self.conn.query(&query, &[&key]).await.unwrap();
 
         for count in 0..rows.len() {
             for col in query.columns() {
@@ -141,6 +141,8 @@ CREATE TABLE IF NOT EXISTS usertable
                 result.insert(key.to_string(), value);
             }
         }
+
+        //dbg!(result);
 
         // TODO: results
         Ok(())
