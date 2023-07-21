@@ -87,8 +87,8 @@ CREATE TABLE IF NOT EXISTS usertable
 
         //dbg!(self.conn.is_closed());
         //self.conn.execute("DROP TABLE IF EXISTS usertable;", &[]).await.unwrap();
-        let client = self.conn.get().await.unwrap();
-        client.execute(&query, &[]).await.unwrap();
+        let client = self.conn.get().await?;
+        client.execute(&query, &[]).await?;
         Ok(())
     }
 
@@ -111,9 +111,9 @@ CREATE TABLE IF NOT EXISTS usertable
         //params.push(&key);
 
         //self.runtime.block_on(async {
-        let client = self.conn.get().await.unwrap();
+        let client = self.conn.get().await?;
         //let fut = client.query(&sql, params.as_slice());
-        client.query(&sql, params.as_slice()).await.unwrap();
+        client.query(&sql, params.as_slice()).await?;
         //});
 
         Ok(())
@@ -134,8 +134,10 @@ CREATE TABLE IF NOT EXISTS usertable
         let key = String::from(key);
         params.push(&key);
 
-        let client = self.conn.get().await.unwrap();
-        client.query(&sql, params.as_slice()).await.unwrap();
+        //dbg!(&self.conn.status());
+
+        let client = self.conn.get().await?;
+        client.query(&sql, params.as_slice()).await?;
 
         Ok(())
     }
@@ -148,9 +150,9 @@ CREATE TABLE IF NOT EXISTS usertable
         sql.and_where(format!("{} = $1", PRIMARY_KEY));
         let sql = sql.sql()?;
 
-        let client = self.conn.get().await.unwrap();
-        let query = client.prepare(&sql).await.unwrap();
-        let rows = client.query(&query, &[&key]).await.unwrap();
+        let client = self.conn.get().await?;
+        let query = client.prepare(&sql).await?;
+        let rows = client.query(&query, &[&key]).await?;
 
         for count in 0..rows.len() {
             for col in query.columns() {

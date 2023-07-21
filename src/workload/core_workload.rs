@@ -56,10 +56,11 @@ pub struct CoreWorkload {
     insertion_retry_interval: u64,
     timeout: u64,
     retries: u64,
+    sender: crate::SenderType,
 }
 
 impl CoreWorkload {
-    pub fn new(prop: &Properties, opt: &crate::Opt) -> Self {
+    pub fn new(prop: &Properties, opt: &crate::Opt, sender: crate::SenderType) -> Self {
         let rng = SmallRng::from_entropy();
         let field_name_prefix = "field";
         let field_count = 10;
@@ -89,6 +90,7 @@ impl CoreWorkload {
             insertion_retry_interval: 0,
             timeout: opt.timeout, // ms
             retries: opt.retries,
+            sender: sender,
         }
     }
 
@@ -96,17 +98,26 @@ impl CoreWorkload {
         let keynum = self.next_key_num();
         let dbkey = format!("{}", fnvhash64(keynum));
         let mut result = HashMap::new();
-        let mut retry = 4;
+        let mut retry = self.retries;
         while retry > 0 {
+            let now = std::time::Instant::now();
             let fut = db.read(&self.table, &dbkey, &mut result);
             match timeout(Duration::from_millis(self.timeout), fut).await {
                 Err(_) => {
-                    println!("read timeout 100ms");
+                    //println!("read timeout 100ms");
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false }).unwrap();
                     retry -= 1;
                 },
                 Ok(result) => {
                     result.unwrap();
                     // read succeeded
+                    //
+                    // If we previously failed, continue until retry == 0 to simulate workload amplification
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true }).unwrap();
+                    if retry != self.retries {
+                        retry -= 1;
+                        continue;
+                    }
                     break;
                 },
             }
@@ -150,15 +161,24 @@ impl Workload for CoreWorkload {
 
         let mut retry = self.retries;
         while retry > 0 {
+            let now = std::time::Instant::now();
             let fut = db.insert(&self.table, &dbkey, &values);
             match timeout(Duration::from_millis(self.timeout), fut).await {
                 Err(_) => {
-                    println!("insert timeout 100ms");
+                    //println!("insert timeout 100ms");
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false }).unwrap();
                     retry -= 1;
                 },
                 Ok(result) => {
                     result.unwrap();
                     // read succeeded
+                    //
+                    // If we previously failed, continue until retry == 0 to simulate workload amplification
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true }).unwrap();
+                    if retry != self.retries {
+                        retry -= 1;
+                        continue;
+                    }
                     break;
                 },
             }
@@ -187,15 +207,22 @@ impl Workload for CoreWorkload {
 
         let mut retry = self.retries;
         while retry > 0 {
+            let now = std::time::Instant::now();
             let fut = db.update(&self.table, &dbkey, &values);
             match timeout(Duration::from_millis(self.timeout), fut).await {
                 Err(_) => {
-                    println!("update timeout 100ms");
+                    //println!("update timeout 100ms");
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false }).unwrap();
                     retry -= 1;
                 },
                 Ok(result) => {
                     result.unwrap();
                     // read succeeded
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true }).unwrap();
+                    if retry != self.retries {
+                        retry -= 1;
+                        continue;
+                    }
                     break;
                 },
             }
