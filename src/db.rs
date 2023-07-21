@@ -10,7 +10,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use async_trait::async_trait;
 
-pub type DBType = Arc<Mutex<dyn DB>>;
+pub type DBType = Postgres;
 
 #[async_trait]
 pub trait DB: Send + Sync {
@@ -24,7 +24,7 @@ pub async fn create_db(db: &str) -> Result<DBType> {
     match db {
         //"sqlite" => Ok(Rc::new(RefCell::new(SQLite::new()?))),
         //"rocksdb" => Ok(Rc::new(RocksDB::new()?)),
-        "postgres" => Ok(Arc::new(Mutex::new(Postgres::new().await?))),
+        "postgres" => Ok(Postgres::new().await?),
         db => Err(anyhow!("{} is an invalid database name", db)),
     }
 }

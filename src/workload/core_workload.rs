@@ -87,11 +87,11 @@ impl CoreWorkload {
         }
     }
 
-    async fn do_transaction_read(&self, db: DBType) {
+    async fn do_transaction_read(&self, mut db: DBType) {
         let keynum = self.next_key_num();
         let dbkey = format!("{}", fnvhash64(keynum));
         let mut result = HashMap::new();
-        db.lock().await.read(&self.table, &dbkey, &mut result).await.unwrap();
+        db.read(&self.table, &dbkey, &mut result).await.unwrap();
         // TODO: verify rows
     }
 
@@ -108,7 +108,7 @@ impl CoreWorkload {
 
 #[async_trait]
 impl Workload for CoreWorkload {
-    async fn do_insert(&self, db: DBType) {
+    async fn do_insert(&self, mut db: DBType) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -126,11 +126,10 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        let mut db = db.lock().await;
         db.insert(&self.table, &dbkey, &values).await.unwrap();
     }
 
-    async fn do_update(&self, db: DBType) {
+    async fn do_update(&self, mut db: DBType) {
         let dbkey = self
             .key_sequence
             .lock()
@@ -148,7 +147,7 @@ impl Workload for CoreWorkload {
                 .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
             values.insert(&field_name[..], s);
         }
-        db.lock().await.update(&self.table, &dbkey, &values).await.unwrap();
+        db.update(&self.table, &dbkey, &values).await.unwrap();
     }
 
     async fn do_transaction(&self, db: DBType) {

@@ -16,6 +16,7 @@ use std::cell::UnsafeCell;
 
 const PRIMARY_KEY: &str = "y_id";
 
+#[derive(Clone)]
 pub struct Postgres {
     conn: Pool,
     //runtime: tokio::runtime::Runtime,
@@ -57,7 +58,7 @@ impl Postgres {
                 recycling_method: RecyclingMethod::Fast
         };
         let mgr = Manager::from_config(pg_config, NoTls, mgr_config);
-        let pool = Pool::builder(mgr).max_size(4).build().unwrap();
+        let pool = Pool::builder(mgr).max_size(100).build().unwrap();
 
         Ok(Postgres { conn: pool } )
     }

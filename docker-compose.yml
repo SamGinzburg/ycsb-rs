@@ -6,7 +6,7 @@ services:
       - POSTGRES_USER=dboperator
       - POSTGRES_PASSWORD=password
       - POSTGRES_DB=postgres
-    cpus: 32 
-      #mem_limit: 4096m
+        #cpus: 32
+      #mem_limit: 1024m
     ports:
       - "5243:5432"
