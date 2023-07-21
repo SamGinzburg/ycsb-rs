@@ -10,12 +10,13 @@ use tokio::task;
 use tokio::*;
 use tokio::time::timeout;
 use async_trait::async_trait;
+use deadpool_postgres::{Manager, ManagerConfig, Pool, RecyclingMethod};
 
 
 const PRIMARY_KEY: &str = "y_id";
 
 pub struct Postgres {
-    conn: Client,
+    conn: Pool,
     //runtime: tokio::runtime::Runtime,
 }
 
@@ -28,6 +29,7 @@ impl Postgres {
             .unwrap();
         */
 
+        /*
         let mut config = Config::new();
         let (client, connection) = config
                         .tcp_user_timeout(Duration::from_millis(500))
@@ -38,12 +40,22 @@ impl Postgres {
                         .host("localhost")
                         .port(5243)
                         .connect(NoTls).await.unwrap();
-        dbg!(client.is_closed());
         tokio::spawn(connection);
-        //connection.await.unwrap();
-        dbg!(client.is_closed());
+        */
 
-        Ok(Postgres { conn: client } )
+        let mut pg_config = tokio_postgres::Config::new();
+        pg_config.user("dboperator");
+        pg_config.dbname("postgres");
+        pg_config.password("password");
+        pg_config.host("localhost");
+        pg_config.port(5243);
+        let mgr_config = ManagerConfig {
+                recycling_method: RecyclingMethod::Fast
+        };
+        let mgr = Manager::from_config(pg_config, NoTls, mgr_config);
+        let pool = Pool::builder(mgr).max_size(256).build().unwrap();
+
+        Ok(Postgres { conn: pool } )
     }
 }
 
@@ -70,7 +82,8 @@ CREATE TABLE IF NOT EXISTS usertable
 
         //dbg!(self.conn.is_closed());
         //self.conn.execute("DROP TABLE IF EXISTS usertable;", &[]).await.unwrap();
-        self.conn.execute(&query, &[]).await.unwrap();
+        let client = self.conn.get().await.unwrap();
+        client.execute(&query, &[]).await.unwrap();
         Ok(())
     }
 
@@ -93,11 +106,14 @@ CREATE TABLE IF NOT EXISTS usertable
         //params.push(&key);
 
         //self.runtime.block_on(async {
-            let fut = self.conn.query(&sql, params.as_slice());
-            if let Err(_) = timeout(Duration::from_millis(100), fut).await {
+        let client = self.conn.get().await.unwrap();
+        let fut = client.query(&sql, params.as_slice());
+        if let Err(_) = timeout(Duration::from_millis(100), fut).await {
                 println!("did not receive value within 100 ms");
-            }
-            self.conn.query(&sql, params.as_slice()).await.unwrap();
+        }
+
+        let client = self.conn.get().await.unwrap();
+        client.query(&sql, params.as_slice()).await.unwrap();
         //});
 
         Ok(())
@@ -118,7 +134,8 @@ CREATE TABLE IF NOT EXISTS usertable
         let key = String::from(key);
         params.push(&key);
 
-        self.conn.query(&sql, params.as_slice()).await.unwrap();
+        let client = self.conn.get().await.unwrap();
+        client.query(&sql, params.as_slice()).await.unwrap();
 
         Ok(())
     }
@@ -131,8 +148,9 @@ CREATE TABLE IF NOT EXISTS usertable
         sql.and_where(format!("{} = $1", PRIMARY_KEY));
         let sql = sql.sql()?;
 
-        let query = self.conn.prepare(&sql).await.unwrap();
-        let rows = self.conn.query(&query, &[&key]).await.unwrap();
+        let client = self.conn.get().await.unwrap();
+        let query = client.prepare(&sql).await.unwrap();
+        let rows = client.query(&query, &[&key]).await.unwrap();
 
         for count in 0..rows.len() {
             for col in query.columns() {
