@@ -45,7 +45,8 @@ pub struct Opt {
 #[derive(Debug)]
 pub struct Request {
     latency: u128,
-    success: bool
+    success: bool,
+    is_retry: bool,
 }
 
 pub type SenderType = Arc<tokio::sync::mpsc::UnboundedSender<Request>>;
@@ -75,7 +76,7 @@ async fn run(wl: Arc<CoreWorkload>, db: db::DBType, operation_count: usize) {
 
     let mut joins = vec![];
     // Use the semaphore to make sure we don't issue too many requests
-    let semaphore = Arc::new(Semaphore::new(300));
+    let semaphore = Arc::new(Semaphore::new(1000));
     for _ in 0..operation_count {
         let db = db.clone();
         let wl = wl.clone();
@@ -118,15 +119,22 @@ async fn main() -> Result<()> {
         let mut histogram = Histogram::<u64>::new_with_bounds(1, 60 * 60 * 1000, 2).unwrap();
 
         let mut fail_count = 0;
+        let mut retry_count = 0;
         let mut total = 0;
         let mut now = std::time::Instant::now();
         while true {
             match rx.poll_recv(&mut cx) {
                 core::task::Poll::Ready(Some(msg)) => {
                     //dbg!(&msg);
-                    histogram.record(msg.latency as u64).unwrap();
-                    if msg.success {
+                    if !msg.success {
                         fail_count += 1;
+                    } else {
+                        // all failure latency == timeout so don't bother tracking those
+                        histogram.record(msg.latency as u64).unwrap();
+                    }
+
+                    if msg.is_retry {
+                        retry_count += 1;
                     }
                     total += 1;
                 },
@@ -137,12 +145,15 @@ async fn main() -> Result<()> {
 
             // Emit percentiles every ~ X ms
             let ellapsed = now.elapsed().as_millis();
-            if ellapsed < 100 {
+            if ellapsed < 1000 {
                 continue;
             }
             // Reset the timer and emit percentiles
             now = std::time::Instant::now();
-            println!("Success rate: {}, total reqs: {}", fail_count as f64 / total as f64, total as f64);
+            println!("Success rate: {}, total reqs: {}, retry frac: {}", (total - fail_count) as f64 / total as f64, total as f64,
+            (retry_count) as f64 / total as f64);
+
+            retry_count = 0;
             fail_count = 0;
             total = 0;
 
@@ -156,50 +167,39 @@ async fn main() -> Result<()> {
 
     let database = opt.database.clone();
     let thread_operation_count = props.operation_count as usize / opt.threads;
-    //for cmd in opt.commands {
-        let start = Instant::now();
-        /*
-        let db = db::create_db(&database).await.unwrap().clone();
+    let start = Instant::now();
 
-        db.lock().await.init().await?;
+    let mut threads = vec![];
+    let mut db = db::create_db(&database).await.unwrap();
 
-        match &opt.commands[0][..] {
-            "load" => load(wl.clone(), db.clone(), thread_operation_count as usize).await,
-            "run" => run(wl.clone(), db.clone(), thread_operation_count as usize).await,
-            cmd => panic!("invalid command: {}", cmd),
-        };
-        */
+    db.init().await.unwrap();
 
-        let mut threads = vec![];
-        let mut db = db::create_db(&database).await.unwrap();
-        db.init().await.unwrap();
-        for _ in 0..opt.threads {
-            //let database = database.clone();
-            let tx = tx.clone();
-            let wl = wl.clone();
-            let cmd = opt.commands[0].clone();
-            let db = db.clone();
-            //let db = db::create_db(&database).await.unwrap();
-            threads.push(tokio::spawn(async move {
-                //let mut db = db::create_db(&database).await.unwrap();
-                //db.init().await.unwrap();
+    for _ in 0..opt.threads {
+        //let database = database.clone();
+        let tx = tx.clone();
+        let wl = wl.clone();
+        let cmd = opt.commands[0].clone();
+        let db = db.clone();
+        //let db = db::create_db(&database).await.unwrap();
+        threads.push(tokio::spawn(async move {
+            //let mut db = db::create_db(&database).await.unwrap();
+            //db.init().await.unwrap();
 
-                match &cmd[..] {
-                    "load" => load(wl.clone(), db, thread_operation_count as usize).await,
-                    "run" => run(wl.clone(), db, thread_operation_count as usize).await,
-                    cmd => panic!("invalid command: {}", cmd),
-                };
-            }));
-        }
-        for t in threads {
-            let _ = t.await;
-        }
-        let runtime = start.elapsed().as_millis();
-        println!("[OVERALL], ThreadCount, {}", opt.threads);
-        println!("[OVERALL], RunTime(ms), {}", runtime);
-        let throughput = props.operation_count as f64 / (runtime as f64 / 1000.0);
-        println!("[OVERALL], Throughput(ops/sec), {}", throughput);
-    //}
+            match &cmd[..] {
+                "load" => load(wl.clone(), db, thread_operation_count as usize).await,
+                "run" => run(wl.clone(), db, thread_operation_count as usize).await,
+                cmd => panic!("invalid command: {}", cmd),
+            };
+        }));
+    }
+    for t in threads {
+        let _ = t.await;
+    }
+    let runtime = start.elapsed().as_millis();
+    println!("[OVERALL], ThreadCount, {}", opt.threads);
+    println!("[OVERALL], RunTime(ms), {}", runtime);
+    let throughput = props.operation_count as f64 / (runtime as f64 / 1000.0);
+    println!("[OVERALL], Throughput(ops/sec), {}", throughput);
 
     Ok(())
 }

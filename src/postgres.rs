@@ -54,11 +54,14 @@ impl Postgres {
         pg_config.password("password");
         pg_config.host("localhost");
         pg_config.port(5243);
+        pg_config.connect_timeout(Duration::from_secs(360));
+        pg_config.tcp_user_timeout(Duration::from_secs(360));
+
         let mgr_config = ManagerConfig {
                 recycling_method: RecyclingMethod::Fast
         };
         let mgr = Manager::from_config(pg_config, NoTls, mgr_config);
-        let pool = Pool::builder(mgr).max_size(100).build().unwrap();
+        let pool = Pool::builder(mgr).max_size(200).build().unwrap();
 
         Ok(Postgres { conn: pool } )
     }

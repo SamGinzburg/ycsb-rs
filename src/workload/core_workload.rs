@@ -105,15 +105,25 @@ impl CoreWorkload {
             match timeout(Duration::from_millis(self.timeout), fut).await {
                 Err(_) => {
                     //println!("read timeout 100ms");
-                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false }).unwrap();
+                    let is_retry = if retry != self.retries { true } else { false };
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false, is_retry: is_retry }).unwrap();
                     retry -= 1;
                 },
                 Ok(result) => {
-                    result.unwrap();
+                    match result {
+                        Err(_) => {
+                            let is_retry = if retry != self.retries { true } else { false };
+                            self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false, is_retry: is_retry }).unwrap();
+                            retry -= 1;
+                            continue;
+                        },
+                        _ => {},
+                    }
                     // read succeeded
                     //
                     // If we previously failed, continue until retry == 0 to simulate workload amplification
-                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true }).unwrap();
+                    let is_retry = if retry != self.retries { true } else { false };
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true, is_retry: is_retry }).unwrap();
                     if retry != self.retries {
                         retry -= 1;
                         continue;
@@ -166,15 +176,26 @@ impl Workload for CoreWorkload {
             match timeout(Duration::from_millis(self.timeout), fut).await {
                 Err(_) => {
                     //println!("insert timeout 100ms");
-                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false }).unwrap();
+                    let is_retry = if retry != self.retries { true } else { false };
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false, is_retry: is_retry }).unwrap();
                     retry -= 1;
                 },
                 Ok(result) => {
-                    result.unwrap();
+                    match result {
+                        Err(_) => {
+                            let is_retry = if retry != self.retries { true } else { false };
+                            self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false, is_retry: is_retry }).unwrap();
+                            retry -= 1;
+                            continue;
+                        },
+                        _ => {},
+                    }
+
                     // read succeeded
                     //
                     // If we previously failed, continue until retry == 0 to simulate workload amplification
-                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true }).unwrap();
+                    let is_retry = if retry != self.retries { true } else { false };
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true, is_retry: is_retry }).unwrap();
                     if retry != self.retries {
                         retry -= 1;
                         continue;
@@ -212,13 +233,23 @@ impl Workload for CoreWorkload {
             match timeout(Duration::from_millis(self.timeout), fut).await {
                 Err(_) => {
                     //println!("update timeout 100ms");
-                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false }).unwrap();
+                    let is_retry = if retry != self.retries { true } else { false };
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false, is_retry: is_retry }).unwrap();
                     retry -= 1;
                 },
                 Ok(result) => {
-                    result.unwrap();
+                    match result {
+                        Err(_) => {
+                            let is_retry = if retry != self.retries { true } else { false };
+                            self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: false, is_retry: is_retry }).unwrap();
+                            retry -= 1;
+                            continue;
+                        },
+                        _ => {},
+                    }
                     // read succeeded
-                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true }).unwrap();
+                    let is_retry = if retry != self.retries { true } else { false };
+                    self.sender.send(crate::Request { latency: now.elapsed().as_millis(), success: true, is_retry: is_retry}).unwrap();
                     if retry != self.retries {
                         retry -= 1;
                         continue;
